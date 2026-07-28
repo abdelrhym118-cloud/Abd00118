@@ -1,0 +1,197 @@
+name: ضغط الفيديو
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'رابط الفيديو أو file_id'
+        required: true
+      content_source:
+        description: 'مصدر المحتوى (url أو file_id)'
+        required: false
+        default: 'url'
+      resolution:
+        description: 'الدقة (مثلاً 720)'
+        required: true
+      codec:
+        description: 'الكوديك (av1, h265)'
+        required: true
+      chat_id:
+        description: 'معرف الدردشة'
+        required: true
+      private:
+        description: 'خصوصي (true/false)'
+        required: true
+      password:
+        description: 'كلمة المرور (فقط لو خاص)'
+        required: false
+        default: ''
+      content_type:
+        description: 'نوع المحتوى'
+        required: false
+        default: 'auto'
+      filename:
+        description: 'اسم الملف المطلوب'
+        required: false
+        default: ''
+
+concurrency:
+  group: video-compression
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  compress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: استنساخ المستودع
+        uses: actions/checkout@v4
+
+      - name: تجهيز البيئة
+        run: |
+          echo "تجهيز البيئة" > stage.txt
+          sudo apt update
+          sudo apt install -y ffmpeg p7zip-full
+          pip install --upgrade --pre yt-dlp python-telegram-bot
+
+      - name: تثبيت Deno
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+
+      - name: تحميل الفيديو
+        env:
+          VIDEO_URL: ${{ github.event.inputs.url }}
+          RESOLUTION: ${{ github.event.inputs.resolution }}
+          CONTENT_SOURCE: ${{ github.event.inputs.content_source }}
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+        run: |
+          echo "تحميل الفيديو" > stage.txt
+
+          if [ "$CONTENT_SOURCE" = "file_id" ]; then
+            echo "📋 تحميل عبر file_id..."
+            DIRECT_URL="https://tight-recipe-d1ef.sijithappu7902.workers.dev/dl/$VIDEO_URL"
+            curl -L -o input.mp4 "$DIRECT_URL" || { echo "❌ فشل التحميل من الرابط المباشر"; exit 1; }
+          else
+            echo "🌐 تحميل عبر الرابط..."
+            unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY
+            echo "$YT_COOKIES" > cookies.txt
+            yt-dlp -f "bv*[height<=${RESOLUTION}]+ba/b[height<=${RESOLUTION}]/best[height<=${RESOLUTION}]/bv*+ba/best" \
+              --extractor-args "youtube:player_client=android,tv,web;formats=missing_pot" \
+              --remote-components ejs:github \
+              --merge-output-format mp4 \
+              -o input.mp4 \
+              --cookies cookies.txt \
+              --verbose \
+              "$VIDEO_URL" 2>&1 | tee ytdlp_log.txt || { echo "❌ فشل التحميل"; exit 1; }
+            rm -f cookies.txt
+          fi
+
+          if [ ! -f input.mp4 ]; then echo "❌ الملف لم يُنشأ"; exit 1; fi
+          echo "✅ تم التحميل بنجاح"
+
+      - name: ضغط الفيديو
+        env:
+          CODEC: ${{ github.event.inputs.codec }}
+          RESOLUTION: ${{ github.event.inputs.resolution }}
+        run: |
+          echo "ضغط الفيديو" > stage.txt
+          if [ "$CODEC" = "av1" ]; then CODEC_LIB="libsvtav1"; PRESET="6"
+          elif [ "$CODEC" = "h265" ]; then CODEC_LIB="libx265"; PRESET="slow"
+          else echo "كوديك غير مدعوم"; exit 1; fi
+          ffmpeg -i input.mp4 \
+            -vf "scale=trunc(oh*a/2)*2:${RESOLUTION}" \
+            -pix_fmt yuv420p10le \
+            -c:v $CODEC_LIB -crf 35 -preset $PRESET \
+            -c:a libopus -b:a 24k -ar 48000 -y output.mkv
+
+      - name: تشفير الفيديو (فقط لو خاص)
+        if: github.event.inputs.private == 'true'
+        id: encrypt
+        run: |
+          echo "تشفير الفيديو" > stage.txt
+          PASSWORD="${{ github.event.inputs.password }}"
+          if [ -z "$PASSWORD" ]; then
+            echo "❌ لم يتم توفير كلمة مرور للفيديو الخاص"; exit 1
+          fi
+          7z a -p"$PASSWORD" -mhe=on output.7z output.mkv
+
+      - name: رفع الملف وإرسال رابط التحميل
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ github.event.inputs.chat_id }}
+          PRIVATE: ${{ github.event.inputs.private }}
+          PASSWORD: ${{ github.event.inputs.password }}
+          FILENAME: ${{ github.event.inputs.filename }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "رفع الملف وإرسال الرابط" > stage.txt
+          TAG="video-${{ github.run_id }}"
+          if [ "$PRIVATE" == "true" ]; then
+            ASSET="output.7z"
+          else
+            ASSET="output.mkv"
+          fi
+          if [ -n "$FILENAME" ]; then
+            EXT="${ASSET##*.}"
+            mv "$ASSET" "${FILENAME}.${EXT}"
+            ASSET="${FILENAME}.${EXT}"
+          fi
+          gh release create "$TAG" "$ASSET" --title "فيديو مضغوط" --notes "تم الإنشاء تلقائياً"
+          DIRECT_URL=$(gh release view "$TAG" --json assets -q '.assets[0].url')
+          echo "🔗 الرابط المباشر: $DIRECT_URL"
+          export DOWNLOAD_URL="$DIRECT_URL"
+
+          python3 << 'EOF'
+          import os, asyncio
+          from telegram import Bot
+
+          async def main():
+              bot = Bot(token=os.environ["BOT_TOKEN"])
+              url = os.environ["DOWNLOAD_URL"]
+              private = os.environ["PRIVATE"]
+              password = os.environ.get("PASSWORD", "")
+
+              if private == "true":
+                  text = "✅ تم الضغط!\n\n📥 رابط التحميل:\n" + url + "\n\n🔑 كلمة المرور:\n" + password
+              else:
+                  text = "✅ تم الضغط!\n\n📥 رابط التحميل المباشر:\n" + url
+
+              await bot.send_message(chat_id=os.environ["CHAT_ID"], text=text)
+
+          asyncio.run(main())
+          EOF
+
+      - name: إرسال إشعار الفشل
+        if: failure()
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ github.event.inputs.chat_id }}
+        run: |
+          python3 << 'EOF'
+          import os, asyncio
+          from telegram import Bot
+
+          async def main():
+              bot = Bot(token=os.environ["BOT_TOKEN"])
+              chat_id = os.environ["CHAT_ID"]
+              run_url = "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+              stage = "غير معروفة"
+              if os.path.exists("stage.txt"):
+                  with open("stage.txt", encoding="utf-8") as f:
+                      stage = f.read().strip()
+
+              text = (
+                  "❌ فشلت العملية.\n\n"
+                  f"🔎 المرحلة: {stage}\n\n"
+                  f"📋 التفاصيل:\n{run_url}"
+              )
+
+              await bot.send_message(chat_id=chat_id, text=text)
+
+          asyncio.run(main())
+          EOF
