@@ -338,7 +338,7 @@ jobs:
           ORIGINAL_TITLE: ${{ needs.split-video.outputs.video_title }}
           DURATION_FMT: ${{ steps.videoinfo.outputs.duration_fmt }}
           ACTUAL_RES: ${{ steps.videoinfo.outputs.actual_res }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           set -euo pipefail
           TAG="video-${{ github.run_id }}"
