@@ -314,7 +314,8 @@ jobs:
           async def main():
               client = TelegramClient(StringSession(session), api_id, api_hash)
               await client.start()
-              await client.send_file(channel_id, file, caption=caption)
+              # ⬇️ التغيير هنا: force_document=True يضمن الرفع كملف وليس كفيديو
+              await client.send_file(channel_id, file, caption=caption, force_document=True)
               print("✅ تم رفع الملف إلى القناة بنجاح")
 
           with TelegramClient(StringSession(session), api_id, api_hash) as client:
