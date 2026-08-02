@@ -57,59 +57,23 @@ jobs:
           echo "تجهيز البيئة" > stage.txt
           sudo apt update
           sudo apt install -y jq ffmpeg
-          pip install --upgrade --pre yt-dlp
 
-      - name: تثبيت Deno
-        run: |
-          curl -fsSL https://deno.land/install.sh | sh
-          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
-
-      - name: تحميل الفيديو المصدر واستخراج العنوان
+      - name: تحميل الفيديو المصدر (رابط مباشر)
         env:
           VIDEO_URL: ${{ github.event.inputs.url }}
-          RESOLUTION: ${{ github.event.inputs.resolution }}
-          CONTENT_SOURCE: ${{ github.event.inputs.content_source }}
         run: |
           echo "تحميل الفيديو" > stage.txt
-
-          if [ "$CONTENT_SOURCE" = "file_id" ]; then
-            echo "📋 تحميل عبر file_id..."
-            DIRECT_URL="https://tight-recipe-d1ef.sijithappu7902.workers.dev/dl/$VIDEO_URL"
-            curl -L -o raw_input.mp4 "$DIRECT_URL" || { echo "❌ فشل التحميل من الرابط المباشر"; exit 1; }
-          else
-            echo "🌐 تحميل عبر الرابط..."
-            unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY
-            echo "$YT_COOKIES" > cookies.txt
-            yt-dlp -f "bv*[height<=${RESOLUTION}]+ba/b[height<=${RESOLUTION}]/best[height<=${RESOLUTION}]/bv*+ba/best" \
-              --extractor-args "youtube:player_client=android,tv,web;formats=missing_pot" \
-              --remote-components ejs:github \
-              --merge-output-format mp4 \
-              -o raw_input.mp4 \
-              --cookies cookies.txt \
-              --print-to-file "%(title)s" video_title_raw.txt \
-              --verbose \
-              "$VIDEO_URL" 2>&1 | tee ytdlp_log.txt || { echo "❌ فشل التحميل"; exit 1; }
-            rm -f cookies.txt
-          fi
-
+          echo "📋 تحميل عبر الرابط المباشر..."
+          curl -L -o raw_input.mp4 "$VIDEO_URL" || { echo "❌ فشل التحميل"; exit 1; }
           if [ ! -f raw_input.mp4 ]; then echo "❌ الملف لم يُنشأ"; exit 1; fi
           echo "✅ تم التحميل بنجاح"
 
       - name: استخراج وتنظيف اسم الفيديو الأصلي
         id: title
         run: |
-          if [ -f video_title_raw.txt ]; then
-            RAW_TITLE=$(head -n 1 video_title_raw.txt)
-          else
-            RAW_TITLE="video"
-          fi
-          CLEAN_TITLE=$(echo "$RAW_TITLE" | sed 's/[\/\\:*?"<>|]//g' | sed 's/  */ /g' | sed 's/^ *//;s/ *$//')
-          if [ -z "$CLEAN_TITLE" ]; then
-            CLEAN_TITLE="video"
-          fi
-          CLEAN_TITLE=$(echo "$CLEAN_TITLE" | cut -c1-100)
+          CLEAN_TITLE="video"
           echo "video_title=$CLEAN_TITLE" >> "$GITHUB_OUTPUT"
-          echo "📝 العنوان المستخرج: $CLEAN_TITLE"
+          echo "📝 العنوان المستخدم: $CLEAN_TITLE"
 
       - name: تقطيع الفيديو (فقط لو أطول من 20 دقيقة)
         id: segment
