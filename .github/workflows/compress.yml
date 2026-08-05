@@ -340,10 +340,17 @@ jobs:
           FILENAME: ${{ github.event.inputs.filename }}
           ORIGINAL_TITLE: ${{ needs.split-video.outputs.video_title }}
         run: |
-          if [ -n "$FILENAME" ]; then
-            FINAL_NAME="$FILENAME"
-          elif [ -n "$ORIGINAL_TITLE" ]; then
-            FINAL_NAME="$ORIGINAL_TITLE"
+          # أخذ أول سطر فقط وتنظيف الاسم من رموز غير صالحة لأسماء الملفات
+          # (تحمي أيضًا من كسر تنسيق GITHUB_OUTPUT عند وجود أسطر متعددة أو رمز |)
+          sanitize() {
+            printf '%s' "$1" | head -n1 | tr -d '\r' | sed 's/[\/\\:*?"<>|]/ /g' | sed 's/  */ /g' | sed 's/^ *//;s/ *$//'
+          }
+          SAFE_FILENAME=$(sanitize "$FILENAME")
+          SAFE_ORIGINAL=$(sanitize "$ORIGINAL_TITLE")
+          if [ -n "$SAFE_FILENAME" ]; then
+            FINAL_NAME="$SAFE_FILENAME"
+          elif [ -n "$SAFE_ORIGINAL" ]; then
+            FINAL_NAME="$SAFE_ORIGINAL"
           else
             FINAL_NAME="video"
           fi
