@@ -56,9 +56,6 @@ jobs:
     steps:
       - name: استنساخ المستودع
         uses: actions/checkout@v4
-        with:
-          repository: abdelrhym118-cloud/Abd00118
-          token: ${{ secrets.GH_TOKEN }}
 
       - name: تجهيز أدوات التحميل
         run: |
@@ -360,9 +357,6 @@ jobs:
     steps:
       - name: استنساخ المستودع
         uses: actions/checkout@v4
-        with:
-          repository: abdelrhym118-cloud/Abd00118
-          token: ${{ secrets.GH_TOKEN }}
 
       - name: تجهيز أدوات الدمج
         run: |
@@ -513,7 +507,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ github.event.inputs.chat_id }}
-          GITHUB_REPOSITORY: abdelrhym118-cloud/Abd00118
+          GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           python3 <<'PYEOF'
