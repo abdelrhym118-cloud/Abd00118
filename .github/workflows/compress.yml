@@ -295,7 +295,7 @@ jobs:
 
           case "$CONTENT_TYPE" in
             real)
-              CRF=30
+              CRF=31
               PRESET=6
               AUDIO_BITRATE=32
               VF_CHAIN="scale=-2:${RESOLUTION}"
@@ -413,8 +413,6 @@ jobs:
           FILENAME: ${{ github.event.inputs.filename }}
           ORIGINAL_TITLE: ${{ needs.split-video.outputs.video_title }}
         run: |
-          # أخذ أول سطر فقط وتنظيف الاسم من رموز غير صالحة لأسماء الملفات
-          # (تحمي أيضًا من كسر تنسيق GITHUB_OUTPUT عند وجود أسطر متعددة أو رمز |)
           sanitize() {
             printf '%s' "$1" | head -n1 | tr -d '\r' | sed 's/[\/\\:*?"<>|]/ /g' | sed 's/  */ /g' | sed 's/^ *//;s/ *$//'
           }
@@ -515,7 +513,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ github.event.inputs.chat_id }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REPOSITORY: abdelrhym118-cloud/Abd00118
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           python3 <<'PYEOF'
